@@ -18,8 +18,7 @@ local LocalPlayer = Players.LocalPlayer
 -- ================================================================= --
 
 local AuthorizedUsers = {
-    ["emlopam"] = true,
-    ["yusufcolfaYTROBLOX"] = true,
+    ["Emlopam"] = true,
     ["frost_playz71"] = true,
     ["KEDISEVER3333"] = true,
     ["summer_smith91"] = true,
