@@ -1,0 +1,368 @@
+-- LocalScript inside StarterPlayerScripts / StarterGui
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local StarterGui = game:GetService("StarterGui")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+--------------------------------------------------------------------------------
+-- CONFIGURATION
+--------------------------------------------------------------------------------
+local PREDICTION_STRENGTH = 0.220 -- Target motion lead prediction factor
+local SNAP_SPEED = 0.95            -- Snapping speed (0.1 = smooth, 1.0 = instant snap)
+
+--------------------------------------------------------------------------------
+-- 1. UI CREATION (Cinematic Draggable Button & Slider)
+--------------------------------------------------------------------------------
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "CinematicLockGui"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+
+-- Main Draggable Button
+local MainButton = Instance.new("TextButton")
+MainButton.Name = "LockButton"
+MainButton.Size = UDim2.new(0, 190, 0, 52)
+MainButton.Position = UDim2.new(0.5, -95, 0.8, 0)
+MainButton.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
+MainButton.BorderSizePixel = 0
+MainButton.Text = "LOCK-ON"
+MainButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+MainButton.Font = Enum.Font.GothamBold
+MainButton.TextSize = 15
+MainButton.AutoButtonColor = false
+MainButton.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 12)
+UICorner.Parent = MainButton
+
+local UIStroke = Instance.new("UIStroke")
+UIStroke.Thickness = 2.5
+UIStroke.Color = Color3.fromRGB(0, 170, 255)
+UIStroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+UIStroke.Parent = MainButton
+
+local UIGradient = Instance.new("UIGradient")
+UIGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(30, 30, 45)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(10, 10, 15))
+})
+UIGradient.Rotation = 45
+UIGradient.Parent = MainButton
+
+-- FOV Slider Container
+local SliderFrame = Instance.new("Frame")
+SliderFrame.Name = "FOVSliderContainer"
+SliderFrame.Size = UDim2.new(0, 200, 0, 45)
+SliderFrame.Position = UDim2.new(0.5, -100, 0.8, 62)
+SliderFrame.BackgroundColor3 = Color3.fromRGB(12, 12, 18)
+SliderFrame.BorderSizePixel = 0
+SliderFrame.Parent = ScreenGui
+
+local SliderCorner = Instance.new("UICorner")
+SliderCorner.CornerRadius = UDim.new(0, 8)
+SliderCorner.Parent = SliderFrame
+
+local SliderLabel = Instance.new("TextLabel")
+SliderLabel.Size = UDim2.new(1, 0, 0.4, 0)
+SliderLabel.BackgroundTransparency = 1
+SliderLabel.Text = "FOV Radius: 90"
+SliderLabel.TextColor3 = Color3.fromRGB(200, 200, 200)
+SliderLabel.Font = Enum.Font.GothamSemibold
+SliderLabel.TextSize = 12
+SliderLabel.Parent = SliderFrame
+
+-- Interactive Slider Track Bar
+local SliderBar = Instance.new("TextButton")
+SliderBar.Name = "SliderBar"
+SliderBar.Size = UDim2.new(0.8, 0, 0, 6)
+SliderBar.Position = UDim2.new(0.1, 0, 0.65, 0)
+SliderBar.BackgroundColor3 = Color3.fromRGB(35, 35, 45)
+SliderBar.BorderSizePixel = 0
+SliderBar.Text = ""
+SliderBar.AutoButtonColor = false
+SliderBar.Parent = SliderFrame
+
+local SliderBarCorner = Instance.new("UICorner")
+SliderBarCorner.CornerRadius = UDim.new(1, 0)
+SliderBarCorner.Parent = SliderBar
+
+-- Slider Active Fill
+local SliderFill = Instance.new("Frame")
+SliderFill.Name = "SliderFill"
+SliderFill.Size = UDim2.new(0.22, 0, 1, 0) -- Starts at default FOV 90
+SliderFill.BackgroundColor3 = Color3.fromRGB(0, 170, 255)
+SliderFill.BorderSizePixel = 0
+SliderFill.Parent = SliderBar
+
+local SliderFillCorner = Instance.new("UICorner")
+SliderFillCorner.CornerRadius = UDim.new(1, 0)
+SliderFillCorner.Parent = SliderFill
+
+-- Draggable Slider Knob (Thumb)
+local SliderKnob = Instance.new("TextButton")
+SliderKnob.Name = "SliderKnob"
+SliderKnob.Size = UDim2.new(0, 16, 0, 16)
+SliderKnob.AnchorPoint = Vector2.new(0.5, 0.5)
+SliderKnob.Position = UDim2.new(1, 0, 0.5, 0)
+SliderKnob.BackgroundColor3 = Color3.fromRGB(255, 255, 255)
+SliderKnob.BorderSizePixel = 0
+SliderKnob.Text = ""
+SliderKnob.AutoButtonColor = false
+SliderKnob.Parent = SliderFill
+
+local KnobCorner = Instance.new("UICorner")
+KnobCorner.CornerRadius = UDim.new(1, 0)
+KnobCorner.Parent = SliderKnob
+
+local KnobStroke = Instance.new("UIStroke")
+KnobStroke.Thickness = 2
+KnobStroke.Color = Color3.fromRGB(0, 170, 255)
+KnobStroke.Parent = SliderKnob
+
+--------------------------------------------------------------------------------
+-- 2. RAINBOW FOV RING CREATION
+--------------------------------------------------------------------------------
+local FOVRadius = 90 -- Default FOV radius in pixels
+
+local FOVFrame = Instance.new("Frame")
+FOVFrame.Name = "RainbowFOV"
+FOVFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+FOVFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+FOVFrame.Size = UDim2.new(0, FOVRadius * 2, 0, FOVRadius * 2)
+FOVFrame.BackgroundTransparency = 1
+FOVFrame.Parent = ScreenGui
+
+local FOVStroke = Instance.new("UIStroke")
+FOVStroke.Thickness = 2
+FOVStroke.Parent = FOVFrame
+
+local FOVGradient = Instance.new("UIGradient")
+FOVGradient.Color = ColorSequence.new({
+	ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 0, 0)),
+	ColorSequenceKeypoint.new(0.2, Color3.fromRGB(255, 255, 0)),
+	ColorSequenceKeypoint.new(0.4, Color3.fromRGB(0, 255, 0)),
+	ColorSequenceKeypoint.new(0.6, Color3.fromRGB(0, 255, 255)),
+	ColorSequenceKeypoint.new(0.8, Color3.fromRGB(0, 0, 255)),
+	ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 0, 0))
+})
+FOVGradient.Parent = FOVStroke
+
+local FOVCorner = Instance.new("UICorner")
+FOVCorner.CornerRadius = UDim.new(1, 0)
+FOVCorner.Parent = FOVFrame
+
+-- Rainbow Rotation Loop
+RunService.RenderStepped:Connect(function(dt)
+	FOVGradient.Rotation = (FOVGradient.Rotation + 75 * dt) % 360
+end)
+
+--------------------------------------------------------------------------------
+-- 3. DRAGGABLE BUTTON LOGIC
+--------------------------------------------------------------------------------
+local draggingButton = false
+local dragInput, dragStart, startPos
+
+local function updateButtonInput(input)
+	local delta = input.Position - dragStart
+	MainButton.Position = UDim2.new(
+		startPos.X.Scale,
+		startPos.X.Offset + delta.X,
+		startPos.Y.Scale,
+		startPos.Y.Offset + delta.Y
+	)
+end
+
+MainButton.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		draggingButton = true
+		dragStart = input.Position
+		startPos = MainButton.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				draggingButton = false
+			end
+		end)
+	end
+end)
+
+MainButton.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
+		dragInput = input
+	end
+end)
+
+--------------------------------------------------------------------------------
+-- 4. DRAGGABLE SLIDER LOGIC
+--------------------------------------------------------------------------------
+local draggingSlider = false
+
+local function updateSlider(input)
+	local barPos = SliderBar.AbsolutePosition.X
+	local barSize = SliderBar.AbsoluteSize.X
+	local mouseX = input.Position.X
+	local relativeX = math.clamp((mouseX - barPos) / barSize, 0, 1)
+
+	SliderFill.Size = UDim2.new(relativeX, 0, 1, 0)
+	
+	-- Map 0.0 - 1.0 ratio to 30px - 300px FOV Radius
+	FOVRadius = math.floor(30 + (relativeX * 270))
+	SliderLabel.Text = "FOV Radius: " .. tostring(FOVRadius)
+	FOVFrame.Size = UDim2.new(0, FOVRadius * 2, 0, FOVRadius * 2)
+end
+
+local function startSliderDrag(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		draggingSlider = true
+		updateSlider(input)
+	end
+end
+
+SliderBar.InputBegan:Connect(startSliderDrag)
+SliderKnob.InputBegan:Connect(startSliderDrag)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+		draggingSlider = false
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if draggingButton and input == dragInput then
+		updateButtonInput(input)
+	elseif draggingSlider and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+		updateSlider(input)
+	end
+end)
+
+--------------------------------------------------------------------------------
+-- 5. PREDICTIVE LOCK-ON MECHANICS (R6 / R15 DETECTOR)
+--------------------------------------------------------------------------------
+local targetPart = nil
+local lockConnection = nil
+
+-- Helper to safely get the target torso part based on rig type
+local function getTorsoPart(character)
+	local humanoid = character:FindFirstChildOfClass("Humanoid")
+	if not humanoid then return nil, false end
+
+	local isR6 = (humanoid.RigType == Enum.HumanoidRigType.R6)
+	local torso = isR6 and character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
+	
+	-- Fallback check in case RigType isn't set properly
+	if not torso then
+		torso = character:FindFirstChild("Torso") or character:FindFirstChild("UpperTorso")
+		isR6 = (torso and torso.Name == "Torso") or false
+	end
+
+	return torso, isR6
+end
+
+-- Find closest player within FOV
+local function getClosestPlayerInFOV()
+	local closestPlayer = nil
+	local shortestDistance = math.huge
+	local viewportCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Character then
+			local char = player.Character
+			local humanoid = char:FindFirstChildOfClass("Humanoid")
+			local torso = getTorsoPart(char)
+
+			if humanoid and humanoid.Health > 0 and torso then
+				local screenPos, onScreen = Camera:WorldToViewportPoint(torso.Position)
+				if onScreen then
+					local distancePoint = (Vector2.new(screenPos.X, screenPos.Y) - viewportCenter).Magnitude
+					if distancePoint <= FOVRadius and distancePoint < shortestDistance then
+						shortestDistance = distancePoint
+						closestPlayer = player
+					end
+				end
+			end
+		end
+	end
+
+	return closestPlayer
+end
+
+local function unlockTarget()
+	targetPart = nil
+	MainButton.Text = "LOCK-ON"
+	UIStroke.Color = Color3.fromRGB(0, 170, 255)
+	
+	if lockConnection then
+		lockConnection:Disconnect()
+		lockConnection = nil
+	end
+end
+
+local function lockOntoTarget(player)
+	local char = player.Character
+	if not char then return end
+
+	local torso, isR6 = getTorsoPart(char)
+	local humanoid = char:FindFirstChildOfClass("Humanoid")
+	if not torso or not humanoid then return end
+
+	-- Send R6 Notification if target is R6
+	if isR6 then
+		pcall(function()
+			StarterGui:SetCore("SendNotification", {
+				Title = "Lock System",
+				Text = "Switched to r6 mode",
+				Duration = 3
+			})
+		end)
+	end
+
+	targetPart = torso
+	MainButton.Text = "LOCKED: " .. string.upper(player.DisplayName)
+	UIStroke.Color = Color3.fromRGB(255, 50, 50)
+
+	-- Automatically unlock when target dies
+	local deathConn
+	deathConn = humanoid.Died:Connect(function()
+		unlockTarget()
+		if deathConn then deathConn:Disconnect() end
+	end)
+
+	-- Initial Snap
+	local initialPredictedPos = targetPart.Position + (targetPart.AssemblyLinearVelocity * PREDICTION_STRENGTH)
+	Camera.CFrame = CFrame.new(Camera.CFrame.Position, initialPredictedPos)
+
+	-- Predictive Lock Loop
+	lockConnection = RunService.RenderStepped:Connect(function()
+		if not targetPart or not targetPart.Parent or humanoid.Health <= 0 then
+			unlockTarget()
+			return
+		end
+
+		local velocity = targetPart.AssemblyLinearVelocity
+		local predictedPosition = targetPart.Position + (velocity * PREDICTION_STRENGTH)
+
+		local currentCF = Camera.CFrame
+		local targetCF = CFrame.new(currentCF.Position, predictedPosition)
+		Camera.CFrame = currentCF:Lerp(targetCF, SNAP_SPEED)
+	end)
+end
+
+MainButton.MouseButton1Click:Connect(function()
+	if targetPart then
+		unlockTarget()
+	else
+		local targetPlayer = getClosestPlayerInFOV()
+		if targetPlayer then
+			lockOntoTarget(targetPlayer)
+		else
+			TweenService:Create(UIStroke, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out, 0, true), {
+				Color = Color3.fromRGB(255, 150, 0)
+			}):Play()
+		end
+	end
+end)
